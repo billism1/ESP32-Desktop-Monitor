@@ -1,6 +1,6 @@
-# ESP32 Pixel Stream
+# ESP32 Desktop Monitor
 
-Stream your computer screen to an ESP32 T-Display in real-time using efficient per-pixel updates over WiFi. This project enables you to mirror your monitor (or a portion of it) to a small 1.14" LCD display connected to an ESP32.
+Stream your computer screen to an ESP32 T-Display over WiFi. This project enables you to mirror your monitor to a small 1.14" LCD display connected to an ESP32.
 
 ## Hardware Requirements
 
