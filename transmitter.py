@@ -28,10 +28,10 @@ class CGPoint(ctypes.Structure):
 
 DEFAULT_IP = "192.168.1.100"
 DEFAULT_PORT = 8090
-DISPLAY_WIDTH = 135
-DISPLAY_HEIGHT = 240
-HEADER_VERSION = 0x02  # carries frame_id in header (pixels)
-RUN_HEADER_VERSION = 0x01  # version for run packets
+DISPLAY_WIDTH = 320
+DISPLAY_HEIGHT = 170
+HEADER_VERSION = 0x03  # v3: uint16 x/y coordinates
+RUN_HEADER_VERSION = 0x02  # v2: uint16 y/x0/length
 
 
 class ScreenshotPixelSender:
@@ -339,7 +339,7 @@ class ScreenshotPixelSender:
             payload = bytearray(header)
             append = payload.extend
             for x, y, color in zip(xs[start:end], ys[start:end], colors[start:end]):
-                append(struct.pack("<BBH", int(x), int(y), int(color)))
+                append(struct.pack("<HHH", int(x), int(y), int(color)))
             packets.append(bytes(payload))
             start = end
         return packets
@@ -390,7 +390,7 @@ class ScreenshotPixelSender:
             payload = bytearray(header)
             append = payload.extend
             for y, x0, length, color in runs[start:end]:
-                append(struct.pack("<BBBH", y, x0, length, color))
+                append(struct.pack("<HHHH", y, x0, length, color))
             packets.append(bytes(payload))
             start = end
         return packets

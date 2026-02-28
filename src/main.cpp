@@ -62,11 +62,11 @@ WiFiClient client;
 
 // Protocol constants
 const uint8_t MAGIC[4]     = {'P', 'X', 'U', 'P'};
-const uint8_t PROTO_VERSION = 0x02;
+const uint8_t PROTO_VERSION = 0x03;  // v3: uint16 x/y
 const size_t  HEADER_SIZE   = 11;  // MAGIC(4) + version(1) + frame_id(4) + count(2)
 
 const uint8_t MAGIC_RUN[4] = {'P', 'X', 'U', 'R'};
-const uint8_t RUN_VERSION   = 0x01;
+const uint8_t RUN_VERSION   = 0x02;  // v2: uint16 y/x0/length
 const size_t  RUN_HEADER_SIZE = 11;
 
 // Colour configuration (adjust if colours appear swapped on your panel)
@@ -119,8 +119,11 @@ bool readExactly(WiFiClient &c, uint8_t *dst, size_t len) {
 
 void applyColorConfig() {
   tft.setSwapBytes(swapBytesSetting);
+  // Only write raw MADCTL for SPI displays; parallel mode handles this internally
+#ifndef TFT_PARALLEL_8_BIT
   tft.writecommand(TFT_MADCTL);
   tft.writedata(useBgrSetting ? TFT_MADCTL_BGR : TFT_MADCTL_RGB);
+#endif
 }
 
 void showWaitingScreen() {
@@ -158,41 +161,89 @@ void setup() {
 #ifdef POWER_ON_PIN
   pinMode(POWER_ON_PIN, OUTPUT);
   digitalWrite(POWER_ON_PIN, HIGH);
+  delay(100);  // allow power rail to stabilize
+  Serial.println("Power pin enabled");
 #endif
 
   // ── Backlight ──
   pinMode(BACKLIGHT_PIN, OUTPUT);
   digitalWrite(BACKLIGHT_PIN, HIGH);
+  Serial.printf("Backlight pin %d set HIGH\n", BACKLIGHT_PIN);
 
   // ── TFT init ──
+  Serial.println("Initializing TFT...");
   tft.init();
+  Serial.println("TFT initialized");
 #ifndef TFT_PARALLEL_8_BIT
   dmaEnabled = tft.initDMA();
+  Serial.println("DMA initialized");
+#else
+  Serial.println("Parallel mode — DMA skipped");
 #endif
-  tft.setRotation(0);  // portrait
+  tft.setRotation(1);  // landscape
   applyColorConfig();
+  Serial.println("Filling screen black...");
   tft.fillScreen(TFT_BLACK);
+  Serial.println("Fill done");
+  
+  // Quick test: draw a white rectangle to confirm display is alive
+  tft.fillRect(0, 0, DISPLAY_WIDTH, 50, TFT_WHITE);
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  tft.setCursor(10, 15);
+  tft.setTextSize(2);
+  tft.println("BOOT OK");
+  Serial.println("Boot banner drawn");
+  delay(500);
 
   // ── WiFi ──
   Serial.printf("Connecting to WiFi: %s\n", ssid);
+  // Show connecting status on display
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(10, 20);
+  tft.setTextSize(1);
+  tft.printf("Connecting to:\n%s", ssid);
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(250);
+  while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+    delay(500);
     Serial.print(".");
     attempts++;
   }
 
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nWiFi connection failed!");
+    Serial.printf("\nWiFi failed! status=%d\n", WiFi.status());
+    Serial.println("Ensure the network is 2.4GHz (ESP32 doesn't support 5GHz)");
     tft.fillScreen(TFT_RED);
     tft.setTextColor(TFT_WHITE, TFT_RED);
-    tft.setCursor(10, 50);
+    tft.setCursor(10, 30);
     tft.setTextSize(2);
     tft.println("WiFi FAILED!");
-    while (true) delay(1000);
+    tft.setTextSize(1);
+    tft.setCursor(10, 60);
+    tft.printf("SSID: %s\n", ssid);
+    tft.setCursor(10, 80);
+    tft.printf("Status: %d", WiFi.status());
+    tft.setCursor(10, 100);
+    tft.println("Check 2.4GHz band");
+    tft.setCursor(10, 115);
+    tft.println("& credentials");
+    // Retry forever
+    while (true) {
+      delay(10000);
+      Serial.println("Retrying WiFi...");
+      WiFi.disconnect();
+      delay(1000);
+      WiFi.begin(ssid, password);
+      attempts = 0;
+      while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+        delay(500);
+        attempts++;
+      }
+      if (WiFi.status() == WL_CONNECTED) break;
+    }
   }
 
   Serial.println("\nWiFi connected");
