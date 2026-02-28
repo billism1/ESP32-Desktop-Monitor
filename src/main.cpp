@@ -31,8 +31,8 @@
 #endif
 
 // ── Backlight pin (set via build_flags) ─────────────────────────────────────
-#ifndef BACKLIGHT_PIN
-#define BACKLIGHT_PIN 4
+#ifndef TFT_ROTATION
+#define TFT_ROTATION 3  // 1=landscape, 3=landscape flipped 180°
 #endif
 
 // ── WiFi credentials (set via build_flags in platformio.ini) ────────────────
@@ -81,9 +81,9 @@ uint32_t      lastFrameId     = 0;
 
 // ── Pixel / run buffer ─────────────────────────────────────────────────────
 struct PixelUpdate {
-  uint8_t  x;
-  uint8_t  y;
-  uint8_t  len;     // used by run packets
+  uint16_t x;
+  uint16_t y;
+  uint16_t len;     // used by run packets
   uint16_t color;
 };
 
@@ -180,7 +180,7 @@ void setup() {
 #else
   Serial.println("Parallel mode — DMA skipped");
 #endif
-  tft.setRotation(1);  // landscape
+  tft.setRotation(TFT_ROTATION);
   applyColorConfig();
   Serial.println("Filling screen black...");
   tft.fillScreen(TFT_BLACK);
@@ -317,22 +317,23 @@ bool handleClient() {
 
     if (!ensureUpdateBuffer(count)) { client.stop(); return false; }
 
-    uint8_t entry[4];
+    // v3: each pixel entry is 6 bytes: x(u16) + y(u16) + color(u16)
+    uint8_t entry[6];
     for (uint16_t i = 0; i < count; i++) {
-      if (!readExactly(client, entry, 4)) {
+      if (!readExactly(client, entry, 6)) {
         Serial.println("Stream ended mid-frame; dropping client");
         client.stop();
         return false;
       }
-      updateBuffer[i].x     = entry[0];
-      updateBuffer[i].y     = entry[1];
-      updateBuffer[i].color = entry[2] | (entry[3] << 8);
+      updateBuffer[i].x     = entry[0] | (entry[1] << 8);
+      updateBuffer[i].y     = entry[2] | (entry[3] << 8);
+      updateBuffer[i].color = entry[4] | (entry[5] << 8);
     }
 
     tft.startWrite();
     for (uint16_t i = 0; i < count; i++) {
-      uint8_t x = updateBuffer[i].x;
-      uint8_t y = updateBuffer[i].y;
+      uint16_t x = updateBuffer[i].x;
+      uint16_t y = updateBuffer[i].y;
       if (x < DISPLAY_WIDTH && y < DISPLAY_HEIGHT) {
         tft.setAddrWindow(x, y, 1, 1);
         tft.writeColor(updateBuffer[i].color, 1);
@@ -379,25 +380,25 @@ bool handleClient() {
 
   if (!ensureUpdateBuffer(count)) { client.stop(); return false; }
 
-  // Each run entry: y(1) + x0(1) + length(1) + color(2) = 5 bytes
-  uint8_t entry[5];
+  // v2 run entry: y(u16) + x0(u16) + length(u16) + color(u16) = 8 bytes
+  uint8_t entry[8];
   for (uint16_t i = 0; i < count; i++) {
-    if (!readExactly(client, entry, 5)) {
+    if (!readExactly(client, entry, 8)) {
       Serial.println("Stream ended mid-run frame; dropping client");
       client.stop();
       return false;
     }
-    updateBuffer[i].y     = entry[0];
-    updateBuffer[i].x     = entry[1];
-    updateBuffer[i].len   = entry[2];
-    updateBuffer[i].color = entry[3] | (entry[4] << 8);
+    updateBuffer[i].y     = entry[0] | (entry[1] << 8);
+    updateBuffer[i].x     = entry[2] | (entry[3] << 8);
+    updateBuffer[i].len   = entry[4] | (entry[5] << 8);
+    updateBuffer[i].color = entry[6] | (entry[7] << 8);
   }
 
   tft.startWrite();
   for (uint16_t i = 0; i < count; i++) {
-    uint8_t x0     = updateBuffer[i].x;
-    uint8_t y      = updateBuffer[i].y;
-    uint8_t runLen = updateBuffer[i].len;
+    uint16_t x0     = updateBuffer[i].x;
+    uint16_t y      = updateBuffer[i].y;
+    uint16_t runLen = updateBuffer[i].len;
     if (x0 < DISPLAY_WIDTH && y < DISPLAY_HEIGHT && runLen > 0
         && (x0 + runLen) <= DISPLAY_WIDTH) {
       tft.setAddrWindow(x0, y, runLen, 1);
